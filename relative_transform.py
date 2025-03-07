@@ -19,16 +19,19 @@ class SetPosition(qg.QDialog):
         self.setWindowOpacity(1)
         self.setFixedWidth(150)
         self.setFixedHeight(40)
-        
+
         layout = qg.QGridLayout(self)
         
         self.entry_x = qg.QLineEdit()
+        self.entry_x.setStyleSheet("QLineEdit { border: 1px solid rgba(255,0,0,0.25); border-radius: 2px; }")
         layout.addWidget(self.entry_x, 1, 1)
         
         self.entry_y = qg.QLineEdit()
+        self.entry_y.setStyleSheet("QLineEdit { border: 1px solid rgba(0,255,0,0.25); border-radius: 2px; }")
         layout.addWidget(self.entry_y, 1, 2)
         
         self.entry_z = qg.QLineEdit()
+        self.entry_z.setStyleSheet("QLineEdit { border: 1px solid rgba(0,0,255,0.25); border-radius: 2px; }")
         layout.addWidget(self.entry_z, 1, 3)
 
         # Timer for checking if no input is active
