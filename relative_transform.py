@@ -4,12 +4,12 @@ import maya.OpenMayaUI as omui
 import maya.cmds as cmds
 import shiboken6 as shiboken
 
-cmds.setToolTo('Move')
 
 def get_maya_window():
     ptr = omui.MQtUtil.mainWindow()
     if ptr is not None:
         return shiboken.wrapInstance(int(ptr), qg.QWidget)
+
 
 class SetPosition(qg.QDialog):
     def __init__(self, parent=None):
@@ -23,21 +23,22 @@ class SetPosition(qg.QDialog):
         layout = qg.QGridLayout(self)
         
         self.entry_x = qg.QLineEdit()
-        self.entry_x.setStyleSheet("QLineEdit { border: 1px solid rgba(255,0,0,0.25); border-radius: 2px; }")
+        self.entry_x.setStyleSheet("QLineEdit { border: 1px solid rgba(255,0,0,0.5); border-radius: 2px; }")
         layout.addWidget(self.entry_x, 1, 1)
         
         self.entry_y = qg.QLineEdit()
-        self.entry_y.setStyleSheet("QLineEdit { border: 1px solid rgba(0,255,0,0.25); border-radius: 2px; }")
+        self.entry_y.setStyleSheet("QLineEdit { border: 1px solid rgba(0,255,0,0.5); border-radius: 2px; }")
         layout.addWidget(self.entry_y, 1, 2)
         
         self.entry_z = qg.QLineEdit()
-        self.entry_z.setStyleSheet("QLineEdit { border: 1px solid rgba(0,0,255,0.25); border-radius: 2px; }")
+        self.entry_z.setStyleSheet("QLineEdit { border: 1px solid rgba(0,0,255,0.5); border-radius: 2px; }")
         layout.addWidget(self.entry_z, 1, 3)
 
         # Timer for checking if no input is active
         self.timer = qc.QTimer(self)
         self.timer.timeout.connect(self.check_inputs)
         self.timer.start(1)  # Check every second
+
 
     def keyPressEvent(self, event):
         if event.key() in (qc.Qt.Key_Return, qc.Qt.Key_Enter):
@@ -81,23 +82,23 @@ class SetPosition(qg.QDialog):
         elif event.key() == qc.Qt.Key_Escape:
             self.hide()
 
+
     def mousePressEvent(self, event):
         if not self.rect().contains(event.pos()):
             self.hide()
+
 
     def check_inputs(self):
         if not self.entry_x.hasFocus() and not self.entry_y.hasFocus() and not self.entry_z.hasFocus():
             self.hide()
 
-# Create an instance of the dialog
-dialog = SetPosition(get_maya_window())
 
-# Show the dialog
-dialog.show()
+def open_dialog():
+    cmds.setToolTo('Move')
+    dialog = SetPosition(get_maya_window())
+    dialog.show()
+    dialog.entry_x.setFocus()
+    maya_window = get_maya_window()
+    dialog.move(maya_window.frameGeometry().center() - dialog.rect().center())
 
-# Set focus to the first input field after showing the dialog
-dialog.entry_x.setFocus()
-
-# Center the dialog in the Maya window
-maya_window = get_maya_window()
-dialog.move(maya_window.frameGeometry().center() - dialog.rect().center())
+open_dialog()
