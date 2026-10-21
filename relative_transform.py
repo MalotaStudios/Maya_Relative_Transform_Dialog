@@ -1,104 +1,98 @@
 from PySide6 import QtCore as qc
 from PySide6 import QtWidgets as qg
 import maya.OpenMayaUI as omui
+import maya.api.OpenMaya as om
 import maya.cmds as cmds
-import shiboken6 as shiboken
+import shiboken6
 
 
 def get_maya_window():
     ptr = omui.MQtUtil.mainWindow()
-    if ptr is not None:
-        return shiboken.wrapInstance(int(ptr), qg.QWidget)
+    return shiboken6.wrapInstance(int(ptr), qg.QWidget) if ptr else None
+
+
+def gizmo_axes():
+    """World-space X, Y and Z axes of the Move tool's current orientation."""
+    ctx = "Move"
+    mode = cmds.manipMoveContext(ctx, query=True, mode=True)
+    if mode == 2:  # World
+        return om.MVector(1, 0, 0), om.MVector(0, 1, 0), om.MVector(0, 0, 1)
+    # Object, Component, Parent, Custom ...: Maya reports the gizmo rotation (radians)
+    rx, ry, rz = cmds.manipMoveContext(ctx, query=True, orientAxes=True)
+    m = om.MEulerRotation(rx, ry, rz).asMatrix()
+    return (om.MVector(1, 0, 0) * m,
+            om.MVector(0, 1, 0) * m,
+            om.MVector(0, 0, 1) * m)
 
 
 class SetPosition(qg.QDialog):
     def __init__(self, parent=None):
-        super(SetPosition, self).__init__(parent, qc.Qt.FramelessWindowHint)
-        
+        super().__init__(parent, qc.Qt.FramelessWindowHint)
+        self.setAttribute(qc.Qt.WA_DeleteOnClose)
         self.setWindowTitle("Set Position")
-        self.setWindowOpacity(1)
-        self.setFixedWidth(150)
-        self.setFixedHeight(40)
+        self.setFixedSize(150, 40)
 
-        layout = qg.QGridLayout(self)
-        
-        self.entry_x = qg.QLineEdit()
-        self.entry_x.setStyleSheet("QLineEdit { border: 1px solid rgba(255,0,0,0.5); border-radius: 2px; }")
-        layout.addWidget(self.entry_x, 1, 1)
-        
-        self.entry_y = qg.QLineEdit()
-        self.entry_y.setStyleSheet("QLineEdit { border: 1px solid rgba(0,255,0,0.5); border-radius: 2px; }")
-        layout.addWidget(self.entry_y, 1, 2)
-        
-        self.entry_z = qg.QLineEdit()
-        self.entry_z.setStyleSheet("QLineEdit { border: 1px solid rgba(0,0,255,0.5); border-radius: 2px; }")
-        layout.addWidget(self.entry_z, 1, 3)
+        layout = qg.QHBoxLayout(self)
+        self.entries = []
+        for colour in ("255,0,0", "0,255,0", "0,0,255"):
+            e = qg.QLineEdit()
+            e.setStyleSheet(
+                f"QLineEdit {{ border: 1px solid rgba({colour},0.5); border-radius: 2px; }}")
+            e.returnPressed.connect(self.apply)
+            layout.addWidget(e)
+            self.entries.append(e)
 
-        # Timer for checking if no input is active
-        self.timer = qc.QTimer(self)
-        self.timer.timeout.connect(self.check_inputs)
-        self.timer.start(1)  # Check every second
+        self._watching = False
+        # start the click-away check only after the dialog has focus
+        qc.QTimer.singleShot(200, self._start_watching)
 
+    def _start_watching(self):
+        qg.QApplication.instance().focusChanged.connect(self._focus_changed)
+        self._watching = True
+
+    def _value(self, entry):
+        try:
+            return float(entry.text().replace(",", ".") or 0)
+        except ValueError:
+            return 0.0
+
+    def apply(self):
+        x, y, z = (self._value(e) for e in self.entries)
+        sel = cmds.ls(selection=True)
+        print("SetPosition input:", x, y, z, "selection:", sel)
+        if sel:
+            ax, ay, az = gizmo_axes()
+            d = ax * x + ay * y + az * z  # offset along the gizmo axes
+            print("SetPosition world offset:", d.x, d.y, d.z)
+            cmds.move(d.x, d.y, d.z, relative=True, worldSpace=True)
+        self.close()
 
     def keyPressEvent(self, event):
-        if event.key() in (qc.Qt.Key_Return, qc.Qt.Key_Enter):
-            pivot_orient = cmds.manipMoveContext('Move', query=True, translate=True)
-            
-            current_unit = cmds.currentUnit(query=True, linear=True)
+        if event.key() == qc.Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
 
-            unit_to_cm = {
-            'mm': 0.1,
-            'cm': 1.0,
-            'm': 100.0,
-            'in': 2.54,
-            'ft': 30.48,
-            'yd': 91.44
-            }
-            
-            conversion_factor = unit_to_cm.get(current_unit, 1.0)
-            
-            try:
-                input_x = float(self.entry_x.text()) if self.entry_x.text() else 0.0
-            except ValueError:
-                input_x = 0.0
-                
-            try:
-                input_y = float(self.entry_y.text()) if self.entry_y.text() else 0.0
-            except ValueError:
-                input_y = 0.0
-                
-            try:
-                input_z = float(self.entry_z.text()) if self.entry_z.text() else 0.0
-            except ValueError:
-                input_z = 0.0
-            
-            translation_input = [input_x * conversion_factor, input_y * conversion_factor, input_z * conversion_factor]
-            
-            result = [x + y for x, y in zip(pivot_orient, translation_input)]
-            
-            cmds.manipMoveContext('Move', edit=True, translate=[result[0], result[1], result[2]])
-            
-            self.hide()
-        elif event.key() == qc.Qt.Key_Escape:
-            self.hide()
+    def _focus_changed(self, old, new):
+        if new is None or not self.isAncestorOf(new):
+            self.close()
 
-
-    def mousePressEvent(self, event):
-        if not self.rect().contains(event.pos()):
-            self.hide()
-
-
-    def check_inputs(self):
-        if not self.entry_x.hasFocus() and not self.entry_y.hasFocus() and not self.entry_z.hasFocus():
-            self.hide()
+    def closeEvent(self, event):
+        if self._watching:
+            qg.QApplication.instance().focusChanged.disconnect(self._focus_changed)
+            self._watching = False
+        super().closeEvent(event)
 
 
 def open_dialog():
-    cmds.setToolTo('Move')
-    dialog = SetPosition(get_maya_window())
+    cmds.setToolTo("moveSuperContext")
+    win = get_maya_window()
+    dialog = SetPosition(win)
     dialog.show()
-    dialog.entry_x.setFocus()
-    maya_window = get_maya_window()
-    dialog.move(maya_window.frameGeometry().center() - dialog.rect().center())
+    if win:
+        dialog.move(win.frameGeometry().center() - dialog.rect().center())
+    dialog.activateWindow()
+    dialog.entries[0].setFocus()
+
 
 open_dialog()
